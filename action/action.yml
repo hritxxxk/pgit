@@ -1,0 +1,72 @@
+name: 'PGit - Statistical Data Drift Detection'
+description: 'Check for statistical drift in your data pipelines using Welch\'s t-test'
+author: 'PGit Team'
+
+branding:
+  icon: 'activity'
+  color: 'blue'
+
+inputs:
+  data_file:
+    description: 'Path to the data file to check (CSV or Parquet)'
+    required: true
+  dataset_name:
+    description: 'Name of the dataset for tracking'
+    required: true
+  pgit_version:
+    description: 'PGit version to use'
+    required: false
+    default: 'latest'
+  threshold:
+    description: 'P-value threshold for drift detection (default: 0.05)'
+    required: false
+    default: '0.05'
+  fail_on_drift:
+    description: 'Fail the workflow if drift is detected'
+    required: false
+    default: 'true'
+  remote_provider:
+    description: 'Remote storage provider (s3)'
+    required: false
+    default: 's3'
+  remote_bucket:
+    description: 'Remote storage bucket name'
+    required: false
+    default: ''
+  remote_prefix:
+    description: 'Remote storage prefix/path'
+    required: false
+    default: ''
+  aws_region:
+    description: 'AWS region for S3'
+    required: false
+    default: 'us-east-1'
+  action_type:
+    description: 'Action to perform: check, push, pull, or all'
+    required: false
+    default: 'check'
+
+outputs:
+  drift_detected:
+    description: 'Whether statistical drift was detected'
+    value: ${{ steps.pgit-check.outputs.drift_detected }}
+  p_value:
+    description: 'Minimum p-value from drift check'
+    value: ${{ steps.pgit-check.outputs.min_p_value }}
+  features_checked:
+    description: 'Number of features checked'
+    value: ${{ steps.pgit-check.outputs.features_checked }}
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.data_file }}
+    - ${{ inputs.dataset_name }}
+    - ${{ inputs.threshold }}
+    - ${{ inputs.fail_on_drift }}
+    - ${{ inputs.remote_provider }}
+    - ${{ inputs.remote_bucket }}
+    - ${{ inputs.remote_prefix }}
+    - ${{ inputs.aws_region }}
+    - ${{ inputs.action_type }}

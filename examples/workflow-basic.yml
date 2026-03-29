@@ -1,0 +1,23 @@
+name: Data Drift Detection
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run PGit drift check
+        uses: ./action  # Use './action' for local testing, or 'pgit-team/pgit-action@v1' from marketplace
+        with:
+          data_file: 'data/production_data.csv'
+          dataset_name: 'production_data'
+          threshold: '0.05'
+          fail_on_drift: 'true'

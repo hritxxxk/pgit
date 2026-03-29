@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package stats;
+
+message Quantile {
+  double percentile = 1;   // e.g. 0.25, 0.5, 0.75
+  double value = 2;
+}
+
+// Frequency entry for a single category value in a string column.
+message CategoricalEntry {
+  string category = 1;
+  uint64 count = 2;
+}
+
+message SummaryStats {
+  string feature_name = 1;
+
+  // Populated for numeric columns
+  uint64 count = 2;
+  double mean = 3;
+  double variance = 4;
+  double std_dev = 5;
+  double min = 6;
+  double max = 7;
+  repeated Quantile quantiles = 8;
+
+  // Populated for string/text columns
+  repeated float semantic_centroid = 9;          // Future: embedding centroid
+  repeated CategoricalEntry categorical_counts = 10; // Category frequencies
+}
+
+message StatisticalManifest {
+  string dataset_name = 1;
+  uint64 total_rows = 2;
+  repeated SummaryStats features = 3;
+  string created_at = 4;
+}

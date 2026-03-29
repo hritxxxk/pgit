@@ -1,0 +1,88 @@
+name: Data Pipeline with Drift Detection
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  
+jobs:
+  etl-and-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas pyarrow
+
+      - name: Run ETL pipeline
+        run: |
+          python scripts/etl_pipeline.py
+
+      - name: Initialize PGit
+        run: pgit init
+
+      - name: Configure S3 remote
+        run: |
+          pgit remote add s3 ${{ secrets.S3_BUCKET }} --prefix pgit-data/
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Pull baseline manifests
+        run: pgit pull
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Check for drift
+        id: drift-check
+        uses: ./action
+        with:
+          data_file: 'output/processed_data.csv'
+          dataset_name: 'daily_processed'
+          threshold: '0.05'
+          fail_on_drift: 'false'
+          action_type: 'check'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Commit new baseline if no drift
+        if: steps.drift-check.outputs.drift_detected == 'false'
+        run: |
+          pgit commit output/processed_data.csv daily_processed -m "Daily baseline update"
+          pgit push
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Send alert if drift detected
+        if: steps.drift-check.outputs.drift_detected == 'true'
+        run: |
+          echo "⚠️ Drift detected! Minimum p-value: ${{ steps.drift-check.outputs.min_p_value }}"
+          # Send Slack/email alert here
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🚨 Data drift detected! p=${{ steps.drift-check.outputs.min_p_value }}\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Upload drift report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-report
+          path: |
+            .pgit/
+            .pgit-remote

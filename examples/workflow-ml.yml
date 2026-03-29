@@ -1,0 +1,54 @@
+name: ML Training with Data Validation
+
+on:
+  pull_request:
+    paths:
+      - 'data/**'
+      - 'src/**'
+      - 'models/**'
+
+jobs:
+  validate-and-train:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install scikit-learn pandas
+
+      - name: Initialize PGit
+        run: pgit init
+
+      - name: Check training data for drift
+        uses: ./action
+        with:
+          data_file: 'data/train.csv'
+          dataset_name: 'training_data'
+          threshold: '0.01'  # Stricter threshold for ML
+          fail_on_drift: 'true'
+
+      - name: Check test data for drift
+        uses: ./action
+        with:
+          data_file: 'data/test.csv'
+          dataset_name: 'test_data'
+          threshold: '0.01'
+          fail_on_drift: 'true'
+
+      - name: Train model
+        if: success()
+        run: |
+          python scripts/train_model.py
+
+      - name: Evaluate model
+        if: success()
+        run: |
+          python scripts/evaluate.py

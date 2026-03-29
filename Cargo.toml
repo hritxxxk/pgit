@@ -1,0 +1,59 @@
+[package]
+name = "pgit"
+version = "0.1.0"
+edition = "2021"
+description = "Statistical data version control with drift detection"
+authors = ["Hrithik Bhadiyak <hrithik@example.com>"]
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+prost = "0.12"
+
+# Data processing
+polars = { version = "0.35", features = ["lazy", "csv", "parquet", "describe"] }
+chrono = "0.4"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Statistics
+statrs = "0.16"
+
+# Hashing (SHA-256 — deterministic, cryptographic)
+sha2 = "0.10"
+hex = "0.4"
+
+# Database
+rusqlite = { version = "0.29", features = ["bundled"] }
+refinery = { version = "0.8", features = ["rusqlite"] }
+
+# AWS S3 (using rustls for TLS)
+aws-config = { version = "0.55", features = ["rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "0.28", default-features = false, features = ["rustls"] }
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Embeddings (optional, feature-gated)
+candle-core = { version = "0.3.0", optional = true }
+candle-nn = { version = "0.3.0", optional = true }
+candle-transformers = { version = "0.3.0", optional = true }
+tokenizers = { version = "0.15", optional = true }
+
+[features]
+default = []
+cuda = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+metal = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+accelerate = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+candle = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+
+[build-dependencies]
+prost-build = "0.12"
+
+[dev-dependencies]
+tempfile = "3.9"
+proptest = "1.4"
