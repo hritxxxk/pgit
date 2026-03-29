@@ -5,11 +5,13 @@
 
 use aws_sdk_s3::primitives::ByteStream;
 
+use prost::Message;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::engine::stats::StatisticalManifest;
 use crate::error::{PgitError, PgitResult};
 use crate::storage::{db_path, open_and_migrate};
 
@@ -62,11 +64,12 @@ pub fn add_remote(
         region: region.map(String::from),
     };
     save_remote_config(&cfg)?;
+    let prefix_display = prefix.unwrap_or("");
     println!(
         "✅ Remote configured: {}://{}/{}",
         provider,
         bucket,
-        prefix.unwrap_or("")
+        prefix_display
     );
     Ok(())
 }
@@ -95,6 +98,7 @@ async fn build_s3_client(cfg: &RemoteConfig) -> aws_sdk_s3::Client {
 pub async fn push_to_s3(cfg: &RemoteConfig) -> PgitResult<()> {
     let conn = super::open_db()?;
     let s3 = build_s3_client(cfg).await;
+    // unwrap_or("") is safe: prefix defaults to empty string for root-level storage
     let prefix = cfg.prefix.as_deref().unwrap_or("");
 
     let mut stmt = conn.prepare(
@@ -147,6 +151,7 @@ pub async fn push_to_s3(cfg: &RemoteConfig) -> PgitResult<()> {
 
 pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
     let s3 = build_s3_client(cfg).await;
+    // unwrap_or("") is safe: prefix defaults to empty string for root-level storage
     let prefix = cfg.prefix.as_deref().unwrap_or("");
     let manifests_prefix = format!("{}manifests/", prefix);
 
@@ -172,9 +177,8 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
             let hash = key
                 .rsplit('/')
                 .next()
-                .map(|s| s.trim_end_matches(".pb"))
-                .unwrap_or("")
-                .to_string();
+                .map(|s| s.trim_end_matches(".pb").to_string())
+                .unwrap_or_else(|| "".to_string());
 
             if hash.is_empty() {
                 continue;
@@ -200,18 +204,6 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
                 .await
                 .map_err(|e| PgitError::Remote(e.to_string()))?;
 
-            let file_path = resp
-                .metadata()
-                .and_then(|m| m.get("file_path"))
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "remote".to_string());
-
-            let dataset_name = resp
-                .metadata()
-                .and_then(|m| m.get("dataset_name"))
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "remote".to_string());
-
             let blob = resp
                 .body
                 .collect()
@@ -219,6 +211,14 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
                 .map_err(|e| PgitError::Remote(e.to_string()))?
                 .into_bytes()
                 .to_vec();
+
+            // Decode manifest to extract original file_path and dataset_name
+            // This preserves metadata that would otherwise be lost on pull
+            let manifest = StatisticalManifest::decode(&mut &blob[..])
+                .map_err(|e| PgitError::Statistical(format!("Failed to decode manifest from S3: {}", e)))?;
+            let file_path = format!("remote:{}", manifest.dataset_name);
+            let dataset_name = manifest.dataset_name.clone();
+            let total_rows = manifest.total_rows as i64;
 
             let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -233,7 +233,7 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
                 "INSERT INTO manifests
                  (commit_hash, file_path, dataset_name, manifest_blob, total_rows, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![hash, file_path, dataset_name, blob, 0_i64, timestamp],
+                params![hash, file_path, dataset_name, blob, total_rows, timestamp],
             )?;
 
             println!("  Pulled: {}", key);

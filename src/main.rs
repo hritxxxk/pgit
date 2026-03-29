@@ -84,6 +84,7 @@ fn run_cli() -> PgitResult<()> {
 
         Commands::Push => {
             let cfg = remote::load_remote_config()?;
+            // unwrap_or("") is safe: prefix defaults to empty string for root-level storage
             println!(
                 "Pushing to {}://{}/{}...",
                 cfg.provider, cfg.bucket,
@@ -96,6 +97,7 @@ fn run_cli() -> PgitResult<()> {
 
         Commands::Pull => {
             let cfg = remote::load_remote_config()?;
+            // unwrap_or("") is safe: prefix defaults to empty string for root-level storage
             println!(
                 "Pulling from {}://{}/{}...",
                 cfg.provider, cfg.bucket,

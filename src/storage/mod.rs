@@ -262,6 +262,7 @@ pub fn show_status() -> PgitResult<()> {
     }
 
     if let Ok(cfg) = remote::load_remote_config() {
+        // unwrap_or("") is safe: prefix defaults to empty string for root-level storage
         println!(
             "\nRemote: {}://{}/{}",
             cfg.provider,

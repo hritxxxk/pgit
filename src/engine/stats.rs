@@ -52,7 +52,9 @@ pub fn scan_dataset(
     for col_name in df.get_column_names() {
         let col = df
             .column(col_name)
-            .map_err(|e| crate::error::PgitError::Statistical(e.to_string()))?;
+            .map_err(|e| crate::error::PgitError::Statistical(
+                format!("Failed to access column '{}': {}", col_name, e)
+            ))?;
 
         match col.dtype() {
             dtype if dtype.is_numeric() => {
@@ -85,9 +87,12 @@ fn scan_numeric_column(
 ) -> crate::error::PgitResult<SummaryStats> {
     let series = col
         .cast(&DataType::Float64)
-        .map_err(|e| crate::error::PgitError::Statistical(e.to_string()))?;
+        .map_err(|e| crate::error::PgitError::Statistical(
+            format!("Failed to cast column '{}' to Float64: {}", col_name, e)
+        ))?;
 
     let count = series.len() as u64;
+    // These unwrap_or(0.0) are safe: empty/null columns legitimately have zero stats
     let mean = series.mean().unwrap_or(0.0);
     let min = series.min::<f64>().unwrap_or(0.0);
     let max = series.max::<f64>().unwrap_or(0.0);
@@ -132,7 +137,9 @@ fn scan_categorical_column(
 ) -> crate::error::PgitResult<SummaryStats> {
     let ca = col
         .utf8()
-        .map_err(|e| crate::error::PgitError::Statistical(e.to_string()))?;
+        .map_err(|e| crate::error::PgitError::Statistical(
+            format!("Column '{}' is not Utf8 type: {}", col_name, e)
+        ))?;
 
     let mut freq: HashMap<String, u64> = HashMap::new();
     for val in ca.into_iter().flatten() {
@@ -161,7 +168,9 @@ fn scan_categorical_column(
 fn compute_quantiles(series: &Series) -> crate::error::PgitResult<Vec<Quantile>> {
     let ca = series
         .f64()
-        .map_err(|e| crate::error::PgitError::Statistical(e.to_string()))?;
+        .map_err(|e| crate::error::PgitError::Statistical(
+            format!("Failed to access Float64 data for quantiles: {}", e)
+        ))?;
     let mut sorted: Vec<f64> = ca.into_iter().flatten().collect();
     sorted.sort_by(|a, b| a.total_cmp(b));
 
@@ -330,6 +339,7 @@ pub fn chi_squared_test(
     let mut df: usize = 0;
 
     for cat in &all_categories {
+        // unwrap_or(0) is safe here: missing categories have zero count
         let expected = baseline_map.get(cat).copied().unwrap_or(0) as f64 * scale;
         let observed = current_map.get(cat).copied().unwrap_or(0) as f64;
 
