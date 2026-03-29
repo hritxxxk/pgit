@@ -81,8 +81,12 @@ fn db_key(prefix: &str) -> String {
     format!("{}pgit.db", prefix)
 }
 
-async fn build_s3_client(_cfg: &RemoteConfig) -> aws_sdk_s3::Client {
-    let sdk_config = aws_config::load_from_env().await;
+async fn build_s3_client(cfg: &RemoteConfig) -> aws_sdk_s3::Client {
+    let mut loader = aws_config::from_env();
+    if let Some(ref region) = cfg.region {
+        loader = loader.region(aws_sdk_s3::config::Region::new(region.clone()));
+    }
+    let sdk_config = loader.load().await;
     aws_sdk_s3::Client::new(&sdk_config)
 }
 
@@ -94,21 +98,23 @@ pub async fn push_to_s3(cfg: &RemoteConfig) -> PgitResult<()> {
     let prefix = cfg.prefix.as_deref().unwrap_or("");
 
     let mut stmt = conn.prepare(
-        "SELECT c.hash, m.manifest_blob
+        "SELECT c.hash, m.manifest_blob, m.file_path, m.dataset_name
          FROM manifests m
          JOIN commits c ON c.hash = m.commit_hash",
     )?;
 
-    let rows: Vec<(String, Vec<u8>)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+    let rows: Vec<(String, Vec<u8>, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
         .collect::<rusqlite::Result<_>>()?;
 
     let mut pushed = 0usize;
-    for (hash, blob) in rows {
+    for (hash, blob, file_path, dataset_name) in rows {
         let key = manifest_key(prefix, &hash);
         s3.put_object()
             .bucket(&cfg.bucket)
             .key(&key)
+            .metadata("file_path", file_path)
+            .metadata("dataset_name", dataset_name)
             .body(ByteStream::from(blob))
             .send()
             .await
@@ -194,6 +200,18 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
                 .await
                 .map_err(|e| PgitError::Remote(e.to_string()))?;
 
+            let file_path = resp
+                .metadata()
+                .and_then(|m| m.get("file_path"))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "remote".to_string());
+
+            let dataset_name = resp
+                .metadata()
+                .and_then(|m| m.get("dataset_name"))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "remote".to_string());
+
             let blob = resp
                 .body
                 .collect()
@@ -215,7 +233,7 @@ pub async fn pull_from_s3(cfg: &RemoteConfig) -> PgitResult<()> {
                 "INSERT INTO manifests
                  (commit_hash, file_path, dataset_name, manifest_blob, total_rows, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![hash, "remote", "remote", blob, 0_i64, timestamp],
+                params![hash, file_path, dataset_name, blob, 0_i64, timestamp],
             )?;
 
             println!("  Pulled: {}", key);

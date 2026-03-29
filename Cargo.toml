@@ -16,7 +16,6 @@ polars = { version = "0.35", features = ["lazy", "csv", "parquet", "describe"] }
 chrono = "0.4"
 
 # Error handling
-anyhow = "1.0"
 thiserror = "1.0"
 
 # Statistics

@@ -2327,7 +2327,6 @@ dependencies = [
 name = "pgit"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "aws-config",
  "aws-sdk-s3",
  "candle-core",

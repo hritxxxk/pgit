@@ -13,7 +13,14 @@ use engine::stats::{compute_drift, scan_dataset};
 use error::{PgitError, PgitResult};
 use storage::remote;
 
-fn main() -> PgitResult<()> {
+fn main() {
+    if let Err(e) = run_cli() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run_cli() -> PgitResult<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -49,8 +56,10 @@ fn main() -> PgitResult<()> {
 
             println!();
             if any_drift {
-                println!("❌ DRIFT DETECTED (p < {:.4})", threshold);
-                std::process::exit(1);
+                return Err(PgitError::DriftDetected(format!(
+                    "Statistical drift detected (p < {:.4}) in one or more features.",
+                    threshold
+                )));
             } else {
                 println!("✅ NO DRIFT DETECTED");
             }
